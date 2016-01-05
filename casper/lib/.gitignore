@@ -1,0 +1,5 @@
+# MATLAB/Simulink autosaves
+*sysgen*.log
+*.autosave
+*.slx.*
+

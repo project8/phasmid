@@ -1,0 +1,22 @@
+# MATLAB/Simulink autosaves
+*sysgen*.log
+*.autosave
+*.mdl.*
+
+# Ignore everything in black box cores/
+*_core/*
+# But unignore the netlist file
+!*_core/*_core.ngc
+
+# Ignore everything in r2daq, then unignore r2daq/bit_files so
+# we can ignore everything in there except for *.bof files.
+r2daq/*
+!r2daq/bit_files
+r2daq/bit_files/*
+!r2daq/bit_files/*.bof
+!r2daq/bit_files/*.bof.gz
+!r2daq/pblocks
+
+# Ignore Plan Ahead and hidden Xilinx files
+_xmsgs*
+planAhead*

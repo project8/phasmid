@@ -1,0 +1,49 @@
+% stage 2
+fprintf(1,'Running 2nd stage:\n');
+tic_start_2 = tic;
+
+%% FFT
+fprintf(1,'\tstage2_fft (ab)...');
+remap_io = {...
+    'sync_out','sync_in';
+    'fft_ab_shift','fft_shift';
+    'dout_c_1','din0_c_1';
+    'dout_c_2','din0_c_2';
+    'dout_c_1','din1_c_1';
+    'dout_c_2','din1_c_2';
+};
+keep_only = {...
+    'T',...
+    'sync_in',...
+    'fft_shift',...
+    'din0_c_1',...
+    'din0_c_2',...
+    'din1_c_1',...
+    'din1_c_2' ...
+};
+tic_start_2a = tic;
+run_core('stage2_fft',@(x) stage2_fft_init(remap_io,keep_only));
+tic_stop_2a = toc(tic_start_2a);
+fprintf(1,' ... done in %10.2fs\n',tic_stop_2a);
+
+%% 2nd stage DDC
+fprintf(1,'\tstage2_ddc (a)...');
+remap_io = {...
+    'sync_out','sync_in';
+    'dout_c_1','din_c_1';
+    'dout_c_2','din_c_2';
+};
+keep_only = {...
+    'T',...
+    'sync_in',...
+    'din_c_1',...
+    'din_c_2' ...
+};
+tic_start_2a = tic;
+run_core('stage2_ddc',@(x) stage2_ddc_init(remap_io,keep_only));
+tic_stop_2a = toc(tic_start_2a);
+fprintf(1,' ... done in %10.2fs\n',tic_stop_2a);
+
+%%
+tic_stop_2 = toc(tic_start_2);
+fprintf(1,'Total 2nd stage time is %10.2fs\n',tic_stop_2);

@@ -1,0 +1,8 @@
+# MATLAB/Simulink autosaves
+*sysgen*.log
+*.autosave
+*.mdl.*
+
+# ignore in/out .mat files
+*_in.mat
+*_out.mat
