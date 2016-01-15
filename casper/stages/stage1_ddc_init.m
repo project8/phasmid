@@ -36,7 +36,7 @@ function [formatted_input] = stage1_ddc_init()
     Wsignal = Fsignal/(Fsamp/2);
     Wpass = Fpass/(Fsamp/2);
     BWpassW = diff(Wpass);
-    Wstop = Fstop/(Fsamp/2);input_core_init
+    Wstop = Fstop/(Fsamp/2);
     % filter coefficients
     B = firls(filter_order,[0,Wstop(1),Wpass,Wstop(2),1],[0,0,1,1,0,0]);
     B = B/(2*max(abs(B)));
