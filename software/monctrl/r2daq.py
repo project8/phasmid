@@ -1,13 +1,28 @@
 #!/usr/bin/env python
 
+import adc5g
 from copy import deepcopy
 from corr.katcp_wrapper import FpgaClient
-from numpy import array, complex64, int8, uint32, uint64, uint8
+import netifaces as ni
+from numpy import (
+	abs, 
+	array, 
+	ceil, 
+	complex64, 
+	concatenate, 
+	float32, 
+	floor, 
+	int8, 
+	pi, 
+	uint32, 
+	uint64, 
+	uint8, 
+	zeros,
+	)
+from scipy.signal import firwin2
 from socket import socket, AF_INET, SOCK_DGRAM
 from struct import unpack
-
-from numpy import abs, angle, array, ceil, concatenate, float32, floor, log10, pi, uint32, unwrap, zeros
-from scipy.signal import firwin2
+from time import sleep, time
 
 class Packet():
 	"""
@@ -169,7 +184,7 @@ class ArtooDaq(object):
 	def roach2(self):
 		return self._roach2
 	
-	def __init__(self,hostname,dsoc_desc=None):
+	def __init__(self,hostname,dsoc_desc=None,boffile=None):
 		"""
 		Initialize an ArtooDaq object.
 		
@@ -184,12 +199,19 @@ class ArtooDaq(object):
 		    the documentation of that class for details. In this case a 
 		    socket is opened and bound to the given address. If None, then
 		    the data socket is not opened. Default is None.
+		boffile : string
+		    Program the device with this bitcode if not None. The special 
+		    filename 'latest-build' uses the current build of the bit-code.
+		    Default is None.
 		"""
 		# connect to roach and store local copy of FpgaClient
 		r2 = FpgaClient(hostname)
 		if not r2.wait_connected(self._TIMEOUT):
 			raise RuntimeError("Unable to connect to ROACH2 named '{0}'".format(hostname))
 		self._roach2 = r2
+		# program bitcode
+		if not boffile is None:
+			self._start(boffile)
 		# initialize some data structures
 		self._ddc_1st = dict()
 		for did in self.DIGITAL_CHANNELS:
@@ -630,4 +652,97 @@ class ArtooDaq(object):
 			raise RuntimeError("Invalid FFT engine tag '{0}', should be one of {1}".format(tag,self.FFT_ENGINES))
 		if self.FFT_ENGINES.index(tag) > 0:
 			raise Warning("FFT engines 'cd' through 'ef' not yet implemented in bitcode")
+	
+	def _start(self,boffile='latest-build',do_cal=True,iface="p11p1",verbose=10):
+		"""
+		Program bitcode on device.
+		
+		Parameters
+		----------
+		boffile : string
+		    Filename of the bitcode to program. If 'latest-build' then 
+		    use the current build. Default is 'latest-build'.
+		do_cal : bool
+		    If true then do ADC core calibration. Default is True.
+		iface : string
+		    Network interface connected to the control network.
+		verbose : int
+		    The higher the more verbose, control the amount of output to
+		    the screen. Default is 10 (probably the highest).
+		Returns
+		-------
+		"""
+		
+		if boffile == "latest-build":
+			boffile = "r2daq_2016_Jan_15_1539.bof"
+		
+		# program bitcode
+		self.roach2.progdev(boffile)
+		self.roach2.wait_connected()
+		if verbose > 1:
+			print "Bitcode '", boffile, "' programmed successfully"
+		
+		# display clock speed
+		if verbose > 3:
+			print "Board clock is ", self.roach2.est_brd_clk(), "MHz"
+		
+		# ADC core calibration
+		if verbose > 5:
+			print "Performing ADC core calibration... (only doing ZDOK0)"
+		adc5g.set_test_mode(self.roach2, 0)
+		#~ adc5g.set_test_mode(self.roach2, 1) #<<---- ZDOK1 not yet in bitcode
+		adc5g.sync_adc(self.roach2)
+		opt0, glitches0 = adc5g.calibrate_mmcm_phase(self.roach2, 0, ['snap_0_snapshot',])
+		#~ opt1, glitches1 = adc5g.calibrate_mmcm_phase(self.roach2, 1, ['zdok_1_snap_data',]) #<<---- ZDOK1 not yet in bitcode
+		adc5g.unset_test_mode(self.roach2, 0)
+		#~ adc5g.unset_test_mode(self.roach2, 1) #<<---- ZDOK1 not yet in bitcode
+		if verbose > 5:
+			print "...ADC core calibration done."
+		if verbose > 3:
+			print "if0: opt0 = ",opt0, ", glitches0 = \n", array(glitches0)
+			#~ print "if1: ",opt0, glitches0  #<<---- ZDOK1 not yet in bitcode
+		
+		# hold master reset signal
+		master_ctrl = self.roach2.write_int('master_ctrl',0x00000001)
+		master_ctrl = self.roach2.read_int('master_ctrl')
+		# hold 10gbe reset signal
+		self.roach2.write_int('tengbe_a_ctrl',0x80000000)
+		# ip, port of data interface on receive side
+		dest_ip_str_cmp = ni.ifaddresses(iface)[2][0]['addr'].split('.')
+		ip3 = int(dest_ip_str_cmp[0])
+		ip2 = int(dest_ip_str_cmp[1])
+		ip1 = int(dest_ip_str_cmp[2])
+		ip0 = int(dest_ip_str_cmp[3])
+		dest_ip = (ip3<<24) + (ip2<<16) + (ip1<<8) + ip0
+		dest_port = 4001
+		# ip, port, mac of data interface on transmit side
+		src_ip = (ip3<<24) + (ip2<<16) + (ip1<<8) + 2
+		src_port = 4000
+		src_mac = (2<<40) + (2<<32) + src_ip
+		# fill arp table on ROACH2
+		mac_iface = ni.ifaddresses(iface)[17][0]['addr']
+		hex_iface = int(mac_iface.translate(None,':'),16)
+		arp = [0xffffffffffff] * 256
+		arp[ip0] = hex_iface
+		# and configure
+		self.roach2.config_10gbe_core('tengbe_a_core',src_mac,src_ip,src_port,arp)
+		self.roach2.write_int('tengbe_a_ip',dest_ip)
+		self.roach2.write_int('tengbe_a_port',dest_port)
+		# and release reset
+		self.roach2.write_int('tengbe_a_ctrl',0x00000000)
+		# set time
+		self.roach2.write_int('unix_time0',int(time()))
+		# release master reset signal
+		master_ctrl = self.roach2.read_int('master_ctrl')
+		master_ctrl = master_ctrl * 0xFFFFFFFE
+		self.roach2.write_int('master_ctrl',master_ctrl)
+		if verbose > 5:
+			print "Configuration done, system should be running"
+		#~ if verbose > 3:
+			#~ print "Hard-reset for buffer overflow error"
+		#~ master_ctrl = self.roach2.write_int('master_ctrl',0x00000001)
+		#~ self.roach2.write_int('tengbe_a_ctrl',0x80000000)
+		#~ sleep(1)
+		#~ self.roach2.write_int('tengbe_a_ctrl',0x00000000)
+		#~ master_ctrl = self.roach2.write_int('master_ctrl',0x00000000)
 	
