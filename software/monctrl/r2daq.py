@@ -754,7 +754,7 @@ class ArtooDaq(object):
 		self.roach2.write_int('unix_time0',int(time()))
 		# release master reset signal
 		master_ctrl = self.roach2.read_int('master_ctrl')
-		master_ctrl = master_ctrl * 0xFFFFFFFE
+		master_ctrl = master_ctrl & 0xFFFFFFFE
 		self.roach2.write_int('master_ctrl',master_ctrl)
 		if verbose > 5:
 			print "Configuration done, system should be running"
