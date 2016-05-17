@@ -174,6 +174,10 @@ class ArtooDaq(object):
 		return self._PHASE_LOOKUP_DEPTH
 	
 	@property
+	def implemented_digital_channels(self):
+		return self._implemented_digital_channels
+	
+	@property
 	def registers(self):
 		registers = dict()
 		for k in self.roach2.listdev():
@@ -630,8 +634,8 @@ class ArtooDaq(object):
 		"""
 		if not tag in self.DIGITAL_CHANNELS:
 			raise RuntimeError("Invalid digital channel tag '{0}', should be one of {1}".format(tag,self.DIGITAL_CHANNELS))
-		if self.DIGITAL_CHANNELS.index(tag) > 0:
-			raise Warning("Digital channels 'b' through 'f' not yet implemented in bitcode")
+		if not tag in self.implemented_digital_channels:
+			raise Warning("Digital channels '{0}' not implemented in bitcode".format(tag))
 	
 	def _check_valid_fft_engine(self,tag):
 		"""
@@ -650,8 +654,8 @@ class ArtooDaq(object):
 		"""
 		if not tag in self.FFT_ENGINES:
 			raise RuntimeError("Invalid FFT engine tag '{0}', should be one of {1}".format(tag,self.FFT_ENGINES))
-		if self.FFT_ENGINES.index(tag) > 0:
-			raise Warning("FFT engines 'cd' through 'ef' not yet implemented in bitcode")
+		if self.FFT_ENGINES.index(tag) > 1:
+			raise Warning("FFT engine 'ef' not yet implemented in bitcode")
 	
 	def _start(self,boffile='latest-build',do_cal=True,iface="p11p1",verbose=10):
 		"""
@@ -674,8 +678,8 @@ class ArtooDaq(object):
 		"""
 		
 		if boffile == "latest-build":
-			boffile = "r2daq_2016_Jan_15_1539.bof"
-		
+			boffile = "r2daq_2016_Feb_19_1127.bof"
+				
 		# program bitcode
 		self.roach2.progdev(boffile)
 		self.roach2.wait_connected()
@@ -702,11 +706,23 @@ class ArtooDaq(object):
 			print "if0: opt0 = ",opt0, ", glitches0 = \n", array(glitches0)
 			#~ print "if1: ",opt0, glitches0  #<<---- ZDOK1 not yet in bitcode
 		
+		# build channel-list
+		ch_list = ['a','b','c','d','e','f']
+		self._implemented_digital_channels = []
+		for ch in ch_list:
+			try:
+				self.roach2.read_int("tengbe_{0}_ctrl".format(ch))
+				self._implemented_digital_channels.append(ch)
+			except RuntimeError:
+				pass
+		print "Valid channels in this build: {0}".format(self.implemented_digital_channels)
+
 		# hold master reset signal
 		master_ctrl = self.roach2.write_int('master_ctrl',0x00000001)
 		master_ctrl = self.roach2.read_int('master_ctrl')
 		# hold 10gbe reset signal
-		self.roach2.write_int('tengbe_a_ctrl',0x80000000)
+		for ch in self.implemented_digital_channels:
+			self.roach2.write_int('tengbe_{0}_ctrl'.format(ch),0x80000000)
 		# ip, port of data interface on receive side
 		dest_ip_str_cmp = ni.ifaddresses(iface)[2][0]['addr'].split('.')
 		ip3 = int(dest_ip_str_cmp[0])
@@ -715,21 +731,25 @@ class ArtooDaq(object):
 		ip0 = int(dest_ip_str_cmp[3])
 		dest_ip = (ip3<<24) + (ip2<<16) + (ip1<<8) + ip0
 		dest_port = 4001
-		# ip, port, mac of data interface on transmit side
-		src_ip = (ip3<<24) + (ip2<<16) + (ip1<<8) + 2
-		src_port = 4000
-		src_mac = (2<<40) + (2<<32) + src_ip
 		# fill arp table on ROACH2
 		mac_iface = ni.ifaddresses(iface)[17][0]['addr']
 		hex_iface = int(mac_iface.translate(None,':'),16)
 		arp = [0xffffffffffff] * 256
 		arp[ip0] = hex_iface
 		# and configure
-		self.roach2.config_10gbe_core('tengbe_a_core',src_mac,src_ip,src_port,arp)
-		self.roach2.write_int('tengbe_a_ip',dest_ip)
-		self.roach2.write_int('tengbe_a_port',dest_port)
+		ch_offset = 0
+		for ch in self.implemented_digital_channels:
+			# ip, port, mac of data interface on transmit side
+			src_ip = (ip3<<24) + (ip2<<16) + (ip1<<8) + 2+ch_offset
+			src_port = 4000
+			src_mac = (2<<40) + (2<<32) + src_ip
+			self.roach2.config_10gbe_core('tengbe_{0}_core'.format(ch),src_mac,src_ip,src_port,arp)
+			self.roach2.write_int('tengbe_{0}_ip'.format(ch),dest_ip)
+			self.roach2.write_int('tengbe_{0}_port'.format(ch),dest_port+ch_offset)
+			ch_offset = ch_offset + 1
 		# and release reset
-		self.roach2.write_int('tengbe_a_ctrl',0x00000000)
+		for ch in self.implemented_digital_channels:
+			self.roach2.write_int('tengbe_{0}_ctrl'.format(ch),0x00000000)
 		# set time
 		self.roach2.write_int('unix_time0',int(time()))
 		# release master reset signal
