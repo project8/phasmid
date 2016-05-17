@@ -396,6 +396,236 @@ class ArtooDaq(object):
 		s_13bit = int(shift_vec,2) & 0x1FFF
 		masked_val = self.registers[regname] & uint32(~(0x1FFF<<idx*13))
 		self._make_assignment({regname: masked_val | uint32(s_13bit<<(idx*13))})
+
+	def calibrate_adc_ogp(self,zdok=0,oiter=10,otol=0.005,giter=10,gtol=0.005,piter=0,ptol=1.0):
+		"""
+		Attempt to match the cores within the ADC.
+
+		Each of the four cores internal to each ADC has an offset, gain,
+		phase, and a number of integrated non-linearity parameters that
+		can be independently tuned. This method attempts to match the
+		cores within the specified ADC by tuning a subset of these 
+		parameters.
+
+		Parameters
+		----------
+		zdok : int
+			ZDOK slot that contains the ADC, should be 0 (default is 0).
+			(Second ADC card not in bitcode)
+		oiter : int
+			Maximum number of iterations to fine-tune offset parameter (default
+			is 10).
+		otol : float
+			If the absolute value of the mean of snapshot data normalized to
+			the standard deviation from one core is below this value then the 
+			offset-tuning is considered sufficient (default is 0.005).
+		giter : int
+			Maximum number of iterations to fine-tune gain parameter (default 
+			is 10).
+		gtol : float
+			If the distance between the standard deviation of the data in one
+			core is less than this fraction of the standard deviation in the data
+			from core1, then the gain-tuning is considered sufficient (default
+			value is 0.005).
+		piter : int
+			Phase calibration not yet implemented.
+		ptol : float
+			Phase calibration not yet implemented.
+		"""
+		print "Attempting OGP-calibration for ZDOK{0}".format(zdok)
+		co = self.calibrate_adc_offset(zdok=zdok,oiter=oiter,otol=otol)
+		cg = self.calibrate_adc_gain(zdok=zdok,giter=giter,gtol=gtol)
+		cp = self.calibrate_adc_phase(zdok=zdok,piter=piter,ptol=ptol)
+		return {'offset': co, 'gain': cg, 'phase': cp}
+
+	def calibrate_adc_offset(self,zdok=0,oiter=10,otol=0.005):
+		"""
+		Attempt to match the core offsets within the ADC.
+
+		See ArtooDaq.calibrate_adc_ogp for more details.
+		"""
+		# offset controlled by float varying over [-50,50] mV with 0.4 mV resolution
+		res_offset = 0.4
+		lim_offset = [-50.0,50.0]
+		groups = 8
+		test_step = 10*res_offset
+		print "  Offset calibration ZDOK{0}:".format(zdok)
+		for ic in xrange(1,5):
+			adc5g.set_spi_offset(self.roach2,zdok,ic,0)
+		x1 = self._snap_per_core(zdok=zdok,groups=groups)
+		sx1 = x1.std(axis=0)
+		mx1 = x1.mean(axis=0)/sx1
+		print "    ...offset: with zero-offsets, means are                                        [{0}]".format(
+			", ".join(["{0:+7.4f}".format(imx) for imx in mx1])
+		)
+		for ic in xrange(1,5):
+			adc5g.set_spi_offset(self.roach2,zdok,ic,test_step)
+		x2 = self._snap_per_core(zdok=zdok,groups=groups)
+		sx2 = x2.std(axis=0)
+		mx2 = x2.mean(axis=0)/sx2
+		print "    ...offset: with {0:+4.1f} mV offset, means are                                      [{1}]".format(
+			test_step,
+			", ".join(["{0:+7.4f}".format(imx) for imx in mx2])
+		)
+		d_mx = (mx2 - mx1)/test_step
+		core_offsets = -mx1/d_mx
+		for ic in xrange(1,5):
+			adc5g.set_spi_offset(self.roach2,zdok,ic,core_offsets[ic-1])
+			core_offsets[ic-1] = adc5g.get_spi_offset(self.roach2,zdok,ic)
+		x = self._snap_per_core(zdok=zdok,groups=groups)
+		sx = x.std(axis=0)
+		mx = x.mean(axis=0)/sx
+		print "    ...offset: solution offsets are [{0}] mV, means are [{1}]".format(
+			", ".join(["{0:+6.2f}".format(ico) for ico in core_offsets]),
+			", ".join(["{0:+7.4f}".format(imx) for imx in mx])
+		)
+		if any(abs(mx) >= otol):
+			print "    ...offset: solution not good enough, iterating (tol={0:4.4f},iter={1:d})".format(otol,oiter)
+			for ii in xrange(0,oiter):
+				for ic in xrange(1,5):
+					if mx[ic-1] > otol:
+						adc5g.set_spi_offset(self.roach2,zdok,ic,core_offsets[ic-1]-res_offset)
+					elif mx[ic-1] < -otol:
+						adc5g.set_spi_offset(self.roach2,zdok,ic,core_offsets[ic-1]+res_offset)
+					core_offsets[ic-1] = adc5g.get_spi_offset(self.roach2,zdok,ic)
+				x = self._snap_per_core(zdok=zdok,groups=groups)
+				sx = x.std(axis=0)
+				mx = x.mean(axis=0)/sx
+				print "    ...offset: solution offsets are [{0}] mV, means are [{1}]".format(
+        	                        ", ".join(["{0:+6.2f}".format(ico) for ico in core_offsets]),
+        		                ", ".join(["{0:+7.4f}".format(imx) for imx in mx])
+              	        	)
+				if all(abs(mx) < otol):
+					print "    ...offset: solution good enough"
+					break
+				if ii==oiter-1:
+					print "    ...offset: maximum number of iterations reached, aborting"
+		else:
+			print "    ...offset: solution good enough"
+		return core_offsets
+
+	def calibrate_adc_gain(self,zdok=0,giter=10,gtol=0.005):
+		"""
+		Attempt to match the core gains within the ADC.
+
+		See ArtooDaq.calibrate_adc_ogp for more details.
+		"""
+		# gain controlled by float varying over [-18%,18%] with 0.14% resolution
+		res_gain = 0.14
+		lim_gain = [-18.0,18.0]
+		groups = 8
+		test_step = 10*res_gain
+		print "  Gain calibration ZDOK{0}:".format(zdok)
+		for ic in xrange(1,5):
+			adc5g.set_spi_gain(self.roach2,zdok,ic,0)
+		x1 = self._snap_per_core(zdok=zdok,groups=groups)
+		sx1 = x1.std(axis=0)
+		s0 = sx1[0]
+		sx1 = sx1/s0
+		print "    ...gain: with zero-offsets, stds are                                    [{0}]".format(
+			", ".join(["{0:+7.4f}".format(isx) for isx in sx1])
+		)
+		# only adjust gains for last three cores, core1 is the reference
+		for ic in xrange(2,5):
+			adc5g.set_spi_gain(self.roach2,zdok,ic,test_step)
+		x2 = self._snap_per_core(zdok=zdok,groups=groups)
+		sx2 = x2.std(axis=0)
+		s0 = sx2[0]
+		sx2 = sx2/s0
+		print "    ...gain: with {0:+6.2f}% gain, stds are                                    [{1}]".format(
+			test_step,
+			", ".join(["{0:+7.4f}".format(isx) for isx in sx2])
+		)
+		d_sx = 100*(sx2 - sx1)/test_step
+		# give differential for core1 a non-zero value, it won't be used anyway
+		d_sx[0] = 1.0
+		# gains are in units percentage
+		core_gains = 100*(1.0-sx1)/d_sx
+		# set core1 gain to zero
+		core_gains[0] = 0
+		for ic in xrange(2,5):
+			adc5g.set_spi_gain(self.roach2,zdok,ic,core_gains[ic-1])
+			core_gains[ic-1] = adc5g.get_spi_gain(self.roach2,zdok,ic)
+		x = self._snap_per_core(zdok=zdok,groups=groups)
+		sx = x.std(axis=0)
+		s0 = sx[0]
+		sx = sx/s0
+		print "    ...gain: solution gains are [{0}]%, stds are [{1}]".format(
+			", ".join(["{0:+6.2f}".format(ico) for ico in core_gains]),
+			", ".join(["{0:+7.4f}".format(isx) for isx in sx])
+		)
+		if any(abs(1.0-sx) >= gtol):
+			print "    ...gain: solution not good enough, iterating (tol={0:4.4f},iter={1:d})".format(gtol,giter)
+			for ii in xrange(0,giter):
+				for ic in xrange(2,5):
+					if (1.0-sx[ic-1]) > gtol:
+						adc5g.set_spi_gain(self.roach2,zdok,ic,core_gains[ic-1]+res_gain)
+					elif (1.0-sx[ic-1]) < -gtol:
+						adc5g.set_spi_gain(self.roach2,zdok,ic,core_gains[ic-1]-res_gain)
+					core_gains[ic-1] = adc5g.get_spi_gain(self.roach2,zdok,ic)
+				x = self._snap_per_core(zdok=zdok,groups=groups)
+				sx = x.std(axis=0)
+				s0 = sx[0]
+				sx = sx/s0
+				print "    ...gain: solution gains are [{0}]%, stds are [{1}]".format(
+                        	        ", ".join(["{0:+6.2f}".format(ico) for ico in core_gains]),
+        	                	", ".join(["{0:+7.4f}".format(isx) for isx in sx])
+	              	        )
+				if all(abs(1.0-sx) < gtol):
+					print "    ...gain: solution good enough"
+					break
+				if ii==giter-1:
+					print "    ...gain: maximum number of iterations reached, aborting"
+		else:
+			print "    ...gain: solution good enough"
+		return core_gains
+
+	def calibrate_adc_phase(self,zdok=0,piter=0,ptol=1.0):
+		"""
+		Attempt to match the core phases within the ADC.
+		
+		See ArtooDaq.calibrate_adc_ogp for more details.
+		"""
+		# phase controlled by float varying over [-14,14] ps with 0.11 ps resolution
+		res_phase = 0.11
+		lim_phase = [-14.0,14.0]
+		print "  Phase calibration ZDOK{0}:".format(zdok)
+		core_phases = zeros(4)
+		for ic in xrange(1,5):
+			core_phases[ic-1] = adc5g.get_spi_phase(self.roach2,zdok,ic)
+		print "    ...phase: tuning not implemented yet, phase parameters are [{0}]".format(
+			", ".join(["{0:+06.2f}".format(icp) for icp in core_phases])
+		)
+		return core_phases
+				
+	def _snap_per_core(self,zdok=0,groups=1):
+		"""
+		Get a snapshot of 8-bit data per core from the ADC.
+
+		Parameters
+		----------
+		zdok : int
+			ID of the ZDOK slot, either 0 or 1 (default is 0)
+		groups : int
+			Each snapshot grabs groups*(2**16) samples per core
+			(default is 1).
+		
+		Returns
+		-------
+		x : ndarray
+			A (groups*(2**16), 4)-shaped array in which data along the 
+			first dimension contains consecutive samples taken form the 
+			same core. The data is ordered such that the index along
+			the second dimension matches core-indexing in the spi-
+			family of functions used to tune the core parameters.
+		"""
+		x = zeros((0,4))
+		for ig in xrange(groups):
+			grab = self.roach2.snapshot_get('snap_{0}_snapshot'.format(zdok))
+        	        x_ = array(unpack('%ib' %grab['length'], grab['data']))
+                	x_ = x_.reshape((x_.size/4,4))
+			x = concatenate((x,x_))
+		return x[:,[0,2,1,3]]
 	
 	def _make_assignment(self,assign_dict):
 		"""
