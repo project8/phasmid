@@ -3,6 +3,7 @@
 import adc5g
 from copy import deepcopy
 from corr.katcp_wrapper import FpgaClient
+from datetime import datetime
 import netifaces as ni
 from numpy import (
 	abs, 
@@ -188,6 +189,78 @@ class ArtooDaq(object):
 	def roach2(self):
 		return self._roach2
 	
+	@property
+	def version(self):
+		reg = self.registers
+		return (reg['rcs_lib'],reg['rcs_app'],reg['rcs_user'])
+	
+	def print_version(self,ver=None):
+		"""
+		Print detailed bitcode version information.
+		
+		Parameters
+		----------
+		ver : tuple
+		    The version tuple to interpret, as returned by the 
+		    ArtooDaq.version property. If None, then the tuple is first
+		    obtained from the current ArtooDaq instance. Default is None.
+		"""
+		def _app_or_lib_to_str(v):
+			b31_format = ('revision system','timestamp')
+			_FORMAT_REVISION = 0
+			_FORMAT_TIMESTAMP = 1
+			
+			b30_rtype = ('git','svn')
+			_RTYPE_GIT = 0
+			_RTYPE_SVN = 1
+			
+			b28_dirty = ('all changes in revision control','changes not in revision control')
+			_DIRTY_SAVED = 0
+			_DRITY_UNSAVED = 1
+			
+			str_out = ''
+			v_format = (v & 0x80000000) >> 31
+			str_out = '   Format: {0}'.format(b31_format[v_format])
+			if v_format == _FORMAT_REVISION:
+				v_rtype = (v & 0x40000000) >> 30
+				str_out = '\n'.join([str_out,'     Type: {0}'.format(
+					b30_rtype[v_rtype]
+				)])
+				v_dirty = (v & 0x10000000) >> 28
+				str_out = '\n'.join([str_out,'    Dirty: {0}'.format(
+					b28_dirty[v_dirty]
+				)])
+				if v_rtype == _RTYPE_GIT:
+					v_hash = (v & 0x0FFFFFFF)
+					str_out = '\n'.join([str_out,'     Hash: {0:07x}'.format(
+						v_hash
+					)])
+				else:
+					v_rev = (v & 0x0FFFFFFF)
+					str_out = '\n'.join([str_out,'      Rev: {0:9d}'.format(
+						v_rev
+					)])
+			else:
+				v_timestamp = (v & 0x3FFFFFFF)
+				str_out = '\n'.join([str_out,'     Time: {0}'.format(
+					datetime.fromtimestamp(float(v_timestamp)).strftime("%F %T")
+				)])
+			return str_out
+
+		if ver is None:
+			ver = self.version
+		vl,va,vu = ver
+		str_out = 'CASPER Library'
+		str_out = '\n'.join([str_out,'=============='])
+		str_out = '\n'.join([str_out,_app_or_lib_to_str(vl)])
+		str_out = '\n'.join([str_out,'Application'])
+		str_out = '\n'.join([str_out,'==========='])
+		str_out = '\n'.join([str_out,_app_or_lib_to_str(va)])
+		str_out = '\n'.join([str_out,'User'])
+		str_out = '\n'.join([str_out,'===='])
+		str_out = '\n'.join([str_out,'  Version: {0:10d}'.format(vu)])
+		print str_out
+		
 	def __init__(self,hostname,dsoc_desc=None,boffile=None):
 		"""
 		Initialize an ArtooDaq object.
