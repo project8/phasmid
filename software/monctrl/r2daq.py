@@ -908,7 +908,7 @@ class ArtooDaq(object):
 		"""
 		
 		if boffile == "latest-build":
-			boffile = "r2daq_2016_Feb_19_1127.bof"
+			boffile = "r2daq_2016_May_18_1148.bof"
 				
 		# program bitcode
 		self.roach2.progdev(boffile)
@@ -947,8 +947,8 @@ class ArtooDaq(object):
 				pass
 		print "Valid channels in this build: {0}".format(self.implemented_digital_channels)
 
-		# hold master reset signal
-		master_ctrl = self.roach2.write_int('master_ctrl',0x00000001)
+		# hold master reset signal and arm the manual sync
+		self.roach2.write_int('master_ctrl',0x00000001 & 0x00000002)
 		master_ctrl = self.roach2.read_int('master_ctrl')
 		# hold 10gbe reset signal
 		for ch in self.implemented_digital_channels:
@@ -985,6 +985,11 @@ class ArtooDaq(object):
 		# release master reset signal
 		master_ctrl = self.roach2.read_int('master_ctrl')
 		master_ctrl = master_ctrl & 0xFFFFFFFE
+		self.roach2.write_int('master_ctrl',master_ctrl)
+		# wait 500ms and then trigger start of manual sync
+		sleep(0.5)
+		master_ctrl = self.roach2.read_int('master_ctrl')
+		master_ctrl = master_ctrl & 0xFFFFFFFC
 		self.roach2.write_int('master_ctrl',master_ctrl)
 		if verbose > 5:
 			print "Configuration done, system should be running"
