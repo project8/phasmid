@@ -1043,7 +1043,7 @@ class ArtooDaq(object):
 		if verbose > 5:
 			print "if0: opt0 = ",opt0, ", glitches0 = \n", array(glitches0)
 			#~ print "if1: ",opt0, glitches0  #<<---- ZDOK1 not yet in bitcode
-		
+	
 		# ADC core calibration
 		if do_cal:
 			self.calibrate_adc_ogp(zdok=0,verbose=verbose)
@@ -1061,7 +1061,7 @@ class ArtooDaq(object):
 			print "Valid channels in this build: {0}".format(self.implemented_digital_channels)
 
 		# hold master reset signal and arm the manual sync
-		self.roach2.write_int('master_ctrl',0x00000001 & 0x00000002)
+		self.roach2.write_int('master_ctrl',0x00000001 | 0x00000002)
 		master_ctrl = self.roach2.read_int('master_ctrl')
 		# hold 10gbe reset signal
 		for ch in self.implemented_digital_channels:
@@ -1093,17 +1093,22 @@ class ArtooDaq(object):
 		# and release reset
 		for ch in self.implemented_digital_channels:
 			self.roach2.write_int('tengbe_{0}_ctrl'.format(ch),0x00000000)
-		# set time
-		self.roach2.write_int('unix_time0',int(time()))
+		# set time, wait until just before a second boundary
+		while(abs(datetime.utcnow().microsecond-9e5)>1e3):
+			sleep(0.001)
+		# when the system starts running it will be the next second
+		ut0 = int(time())+1
+		self.roach2.write_int('unix_time0',ut0)
 		# release master reset signal
-		master_ctrl = self.roach2.read_int('master_ctrl')
-		master_ctrl = master_ctrl & 0xFFFFFFFE
-		self.roach2.write_int('master_ctrl',master_ctrl)
-		# wait 500ms and then trigger start of manual sync
-		sleep(0.5)
 		master_ctrl = self.roach2.read_int('master_ctrl')
 		master_ctrl = master_ctrl & 0xFFFFFFFC
 		self.roach2.write_int('master_ctrl',master_ctrl)
+#		# wait 100ms and then trigger start of manual sync
+#		sleep(0.1)
+#		master_ctrl = self.roach2.read_int('master_ctrl')
+#		master_ctrl = master_ctrl & 0xFFFFFFFC
+#		self.roach2.write_int('master_ctrl',master_ctrl)
+		# on the 
 		if verbose > 1:
 			print "Configuration done, system should be running"
 		#~ if verbose > 3:
