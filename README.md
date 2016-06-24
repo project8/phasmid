@@ -24,7 +24,32 @@ and try
 
 `r2 = r2daq.ArtooDaq('roach2_hostname',boffile='latest-build')`.
 
-This will create an `ArtooDaq` instance which encapsulates the ROACH2 system. Some high-level methods are available to configure the system as needed, for example to tune channel *a* to 1234MHz, set the gain for that channel to 7, and to set the FFT shift vector for channels *a* and *b* to prevent overflow, do
+This will create an `ArtooDaq` instance which encapsulates the ROACH2 system.
+
+##### ADC calibration
+
+By default the system will at startup step through an ADC interface calibration procedure as well as an ADC core calibration procedure. These can be turned on / off using the flags `do_ogp_cal` (core calibration) and `do_adcif_cal` (interface calibration) as in,
+
+`r2 = r2daq.ArtooDaq('roach2_hostname',boffile='latest-build',do_ogp_cal=False,do_adcif_cal=False)`.
+
+The *interface calibration* is needed to ensure that the FPGA is synchronized properly with the data streamed from the ADC and should typically *not* be disabled when data needs capturing. It does save startup time though, and is useful for debugging monitor / control software.
+
+The *core calibration* attempts to remove artefacts in the data. Without doing this there will likely appear some spurs in the spectrum, most prominently at half the Nyquist frequency. This procedure takes even more time than ADC interface calibratoin and can also be disabled for debugging, but it's recommended for actual data capturing.
+
+##### Network configuration
+
+The control software now allows specifying more general IP settings for the ROACH2 data network interfaces. To set IP settings for the interfaces of channels *a* and *b*, do
+
+`cfg_a = self.make_interface_config_dictionary('192.168.10.100',4000,'192.168.10.63',4001,dest_mac='00:60:dd:44:91:e7',tag='a')`
+`cfg_b = self.make_interface_config_dictionary('192.168.10.101',4000,'192.168.10.64',4001,dest_mac='00:60:dd:44:91:e8',tag='b')`
+`cfg_list = [cfg_a,cfg_b]`
+r2 = r2daq.ArtooDaq('roach2_hostname',boffile='latest-build',ifcfg=cfg_list)`.
+
+Currently the IP settings can only be configured at system startup (when calling `ArtooDaq.__init__` with `boffile` not equal to `None`). Future changes in the bitcode and software will enable the system to be reconfigured in a more flexible way.
+
+##### Channel configuration
+
+Some high-level methods are available to configure the system as needed, for example to tune channel *a* to 1234MHz, set the gain for that channel to 7, and to set the FFT shift vector for channels *a* and *b* to prevent overflow, do
 
 `r2.tune_ddc_1st_to_freq(1234e6,tag='a')`
 
