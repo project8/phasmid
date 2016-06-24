@@ -359,7 +359,9 @@ class ArtooDaq(object):
             'tag':tag
         }
     
-    def __init__(self,hostname,dsoc_desc=None,boffile=None,ifcfg=None):
+    def __init__(self,hostname,dsoc_desc=None,boffile=None,ifcfg=None,
+        do_ogp_cal=True,do_adcif_cal=True
+    ):
         """
         Initialize an ArtooDaq object.
         
@@ -382,6 +384,10 @@ class ArtooDaq(object):
             List of dictionaries built with calls to 
             make_interface_config_dictionary. If this parameter is None
             then a default list is created. Default is None.
+        do_ogp_cal : bool
+            If True then do ADC core calibration. Default is True.
+        do_adcif_cal : bool
+            If True then do ADC interface calibration. Default is True.
         """
         # connect to roach and store local copy of FpgaClient
         r2 = FpgaClient(hostname)
@@ -413,7 +419,9 @@ class ArtooDaq(object):
         ### --------
         # program bitcode
         if not boffile is None:
-            self._start(boffile)
+            self._start(boffile,do_ogp_cal=do_ogp_cal,
+                do_adcif_cal=do_adcif_cal
+            )
         # initialize some data structures
         self._ddc_1st = dict()
         for did in self.DIGITAL_CHANNELS:
@@ -1308,7 +1316,7 @@ class ArtooDaq(object):
             'tag':tag
         }
     
-    def _start(self,boffile='latest-build',do_cal=True):
+    def _start(self,boffile='latest-build',do_ogp_cal=True,do_adcif_cal=True):
         """
         Program bitcode on device.
         
@@ -1317,8 +1325,10 @@ class ArtooDaq(object):
         boffile : string
             Filename of the bitcode to program. If 'latest-build' then 
             use the current build. Default is 'latest-build'.
-        do_cal : bool
-            If true then do ADC core calibration. Default is True.
+        do_ogp_cal : bool
+            If True then do ADC core calibration. Default is True.
+        do_adcif_cal : bool
+            If True then do ADC interface calibration. Default is True.
         
         Returns
         -------
@@ -1336,20 +1346,21 @@ class ArtooDaq(object):
         logger.debug("Board clock is ", self.roach2.est_brd_clk(), "MHz")
         
         # ADC interface calibration
-        logger.info("Performing ADC interface calibration... (only doing ZDOK0)")
-        adc5g.set_test_mode(self.roach2, 0)
-        #~ adc5g.set_test_mode(self.roach2, 1) #<<---- ZDOK1 not yet in bitcode
-        adc5g.sync_adc(self.roach2)
-        opt0, glitches0 = adc5g.calibrate_mmcm_phase(self.roach2, 0, ['snap_0_snapshot',])
-        #~ opt1, glitches1 = adc5g.calibrate_mmcm_phase(self.roach2, 1, ['zdok_1_snap_data',]) #<<---- ZDOK1 not yet in bitcode
-        adc5g.unset_test_mode(self.roach2, 0)
-        #~ adc5g.unset_test_mode(self.roach2, 1) #<<---- ZDOK1 not yet in bitcode
-        logger.info("...ADC interface calibration done.")
-        logger.debug("if0: opt0 = ",opt0, ", glitches0 = \n", array(glitches0))
-        #~ logger.debug("if0: opt0 = ",opt0, ", glitches0 = \n", array(glitches0)) #<<---- ZDOK1 not yet in bitcode
-    
+        if do_adcif_cal:
+            logger.info("Performing ADC interface calibration... (only doing ZDOK0)")
+            adc5g.set_test_mode(self.roach2, 0)
+            #~ adc5g.set_test_mode(self.roach2, 1) #<<---- ZDOK1 not yet in bitcode
+            adc5g.sync_adc(self.roach2)
+            opt0, glitches0 = adc5g.calibrate_mmcm_phase(self.roach2, 0, ['snap_0_snapshot',])
+            #~ opt1, glitches1 = adc5g.calibrate_mmcm_phase(self.roach2, 1, ['zdok_1_snap_data',]) #<<---- ZDOK1 not yet in bitcode
+            adc5g.unset_test_mode(self.roach2, 0)
+            #~ adc5g.unset_test_mode(self.roach2, 1) #<<---- ZDOK1 not yet in bitcode
+            logger.info("...ADC interface calibration done.")
+            logger.debug("if0: opt0 = ",opt0, ", glitches0 = \n", array(glitches0))
+            #~ logger.debug("if0: opt0 = ",opt0, ", glitches0 = \n", array(glitches0)) #<<---- ZDOK1 not yet in bitcode
+        
         # ADC core calibration
-        if do_cal:
+        if do_ogp_cal:
             self.calibrate_adc_ogp(zdok=0)
         
         # keep system in reset
