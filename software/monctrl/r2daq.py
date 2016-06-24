@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+"""
 
 import adc5g
 from copy import deepcopy
