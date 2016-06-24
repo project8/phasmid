@@ -1083,17 +1083,5 @@ class ArtooDaq(object):
         master_ctrl = self.roach2.read_int('master_ctrl')
         master_ctrl = master_ctrl & 0xFFFFFFFC
         self.roach2.write_int('master_ctrl',master_ctrl)
-#        # wait 100ms and then trigger start of manual sync
-#        sleep(0.1)
-#        master_ctrl = self.roach2.read_int('master_ctrl')
-#        master_ctrl = master_ctrl & 0xFFFFFFFC
-#        self.roach2.write_int('master_ctrl',master_ctrl)
-        # on the 
         logger.info("Configuration done, system should be running")
-        #~ logger.debug("Hard-reset for buffer overflow error")
-        #~ master_ctrl = self.roach2.write_int('master_ctrl',0x00000001)
-        #~ self.roach2.write_int('tengbe_a_ctrl',0x80000000)
-        #~ sleep(1)
-        #~ self.roach2.write_int('tengbe_a_ctrl',0x00000000)
-        #~ master_ctrl = self.roach2.write_int('master_ctrl',0x00000000)
-    
+
