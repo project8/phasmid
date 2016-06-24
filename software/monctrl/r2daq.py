@@ -199,9 +199,9 @@ class ArtooDaq(object):
         reg = self.registers
         return (reg['rcs_lib'],reg['rcs_app'],reg['rcs_user'])
     
-    def print_version(self,ver=None):
+    def string_version(self,ver=None):
         """
-        Print detailed bitcode version information.
+        Return human-readable detailed bitcode version information.
         
         Parameters
         ----------
@@ -209,6 +209,11 @@ class ArtooDaq(object):
             The version tuple to interpret, as returned by the 
             ArtooDaq.version property. If None, then the tuple is first
             obtained from the current ArtooDaq instance. Default is None.
+        
+        Returns
+        -------
+        str : str
+            A nice display of version information.
         """
         def _app_or_lib_to_str(v):
             b31_format = ('revision system','timestamp')
@@ -264,7 +269,7 @@ class ArtooDaq(object):
         str_out = '\n'.join([str_out,'User'])
         str_out = '\n'.join([str_out,'===='])
         str_out = '\n'.join([str_out,'  Version: {0:10d}'.format(vu)])
-        print str_out
+        return str_out
         
     def __init__(self,hostname,dsoc_desc=None,boffile=None):
         """
