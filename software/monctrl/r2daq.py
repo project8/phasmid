@@ -3,6 +3,8 @@
 """
 """
 
+from __future__ import division
+
 import adc5g
 from copy import deepcopy
 from corr.katcp_wrapper import FpgaClient
@@ -116,7 +118,7 @@ class Packet():
         if not len_bytes == cls.BYTES_IN_PACKET:
             raise ValueError("Packet should comprise {0} bytes, but has {1} bytes".format(len_bytes,cls.BYTES_IN_PACKET))
         # unpack header
-        hdr = unpack(">{0}Q".format(cls.BYTES_IN_HEADER/8),bytestr[:cls.BYTES_IN_HEADER])
+        hdr = unpack(">{0}Q".format(cls.BYTES_IN_HEADER//8),bytestr[:cls.BYTES_IN_HEADER])
         ut = uint32(hdr[0] & 0xFFFFFFFF)
         pktnum = uint32((hdr[0]>>uint32(32)) & 0xFFFFF)
         did = uint8(hdr[0]>>uint32(52) & 0x3F)
@@ -127,7 +129,7 @@ class Packet():
         res1 = uint64(hdr[3]&0x7FFFFFFFFFFFFFFF)
         fnt = not (hdr[3]&0x8000000000000000 == 0)
         # unpack data in 64bit mode to correct for byte-order
-        data_64bit = array(unpack(">{0}Q".format(cls.BYTES_IN_PAYLOAD/8),bytestr[cls.BYTES_IN_HEADER:]),dtype=uint64)
+        data_64bit = array(unpack(">{0}Q".format(cls.BYTES_IN_PAYLOAD//8),bytestr[cls.BYTES_IN_HEADER:]),dtype=uint64)
         data = zeros(cls.BYTES_IN_PAYLOAD,dtype=int8)
         for ii in xrange(len(data_64bit)):
             for jj in xrange(8):
@@ -734,7 +736,7 @@ class ArtooDaq(object):
         for ig in xrange(groups):
             grab = self.roach2.snapshot_get('snap_{0}_snapshot'.format(zdok))
             x_ = array(unpack('%ib' %grab['length'], grab['data']))
-            x_ = x_.reshape((x_.size/4,4))
+            x_ = x_.reshape((x_.size//4,4))
             x = concatenate((x,x_))
         return x[:,[0,2,1,3]]
     
@@ -895,7 +897,7 @@ class ArtooDaq(object):
         N = len(B);
         if not N ==128:
             raise RuntimeError("There should be 128 filter coefficients for 1st stage DDC, but {0} received".format(N))
-        N_w = N/groupsize;
+        N_w = N//groupsize;
         words = zeros(N_w,uint32)
         for bb in xrange(N):
             gg = bb % groupsize
@@ -936,7 +938,7 @@ class ArtooDaq(object):
         shift_factor = uint32(2**w)
         mask = uint32(shift_factor-1)
         N = 128
-        N_w = N/groupsize
+        N_w = N//groupsize
         # read uint32 words
         words = zeros(N_w,uint32)
         base = 'ddc_1st_' + tag
