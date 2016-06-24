@@ -9,6 +9,7 @@ import adc5g
 from copy import deepcopy
 from corr.katcp_wrapper import FpgaClient
 from datetime import datetime
+import logging
 import netifaces as ni
 from numpy import (
     abs, 
@@ -29,6 +30,8 @@ from scipy.signal import firwin2
 from socket import socket, AF_INET, SOCK_DGRAM
 from struct import unpack
 from time import sleep, time
+
+logger = logging.getLogger(__name__)
 
 class Packet():
     """
@@ -484,7 +487,6 @@ class ArtooDaq(object):
             oiter=10,otol=0.005,
             giter=10,gtol=0.005,
             piter=0,ptol=1.0,
-            verbose=10
     ):
         """
         Attempt to match the cores within the ADC.
@@ -519,9 +521,6 @@ class ArtooDaq(object):
             Phase calibration not yet implemented.
         ptol : float
             Phase calibration not yet implemented.
-        verbose : int
-            The higher the more verbose, control the amount of output to
-            the screen. Default is 10 (probably the highest).
         
         Returns
         -------
@@ -529,14 +528,13 @@ class ArtooDaq(object):
             The returned parameter is a dictionary that contains the optimal
             settings for offset, gain and phase as solved during calibration.
         """
-        if verbose > 3:
-            print "Attempting OGP-calibration for ZDOK{0}".format(zdok)
-        co = self.calibrate_adc_offset(zdok=zdok,oiter=oiter,otol=otol,verbose=verbose)
-        cg = self.calibrate_adc_gain(zdok=zdok,giter=giter,gtol=gtol,verbose=verbose)
-        cp = self.calibrate_adc_phase(zdok=zdok,piter=piter,ptol=ptol,verbose=verbose)
+        logger.info("Attempting OGP-calibration for ZDOK{0}".format(zdok))
+        co = self.calibrate_adc_offset(zdok=zdok,oiter=oiter,otol=otol)
+        cg = self.calibrate_adc_gain(zdok=zdok,giter=giter,gtol=gtol)
+        cp = self.calibrate_adc_phase(zdok=zdok,piter=piter,ptol=ptol)
         return {'offset': co, 'gain': cg, 'phase': cp}
 
-    def calibrate_adc_offset(self,zdok=0,oiter=10,otol=0.005,verbose=10):
+    def calibrate_adc_offset(self,zdok=0,oiter=10,otol=0.005):
         """
         Attempt to match the core offsets within the ADC.
 
@@ -547,27 +545,24 @@ class ArtooDaq(object):
         lim_offset = [-50.0,50.0]
         groups = 8
         test_step = 10*res_offset
-        if verbose > 3:
-            print "  Offset calibration ZDOK{0}:".format(zdok)
+        logger.info("  Offset calibration ZDOK{0}:".format(zdok))
         for ic in xrange(1,5):
             adc5g.set_spi_offset(self.roach2,zdok,ic,0)
         x1 = self._snap_per_core(zdok=zdok,groups=groups)
         sx1 = x1.std(axis=0)
         mx1 = x1.mean(axis=0)/sx1
-        if verbose > 5:
-            print "    ...offset: with zero-offsets, means are                                        [{0}]".format(
-                ", ".join(["{0:+7.4f}".format(imx) for imx in mx1])
-            )
+        logger.debug("    ...offset: with zero-offsets, means are                                        [{0}]".format(
+            ", ".join(["{0:+7.4f}".format(imx) for imx in mx1])
+        ))
         for ic in xrange(1,5):
             adc5g.set_spi_offset(self.roach2,zdok,ic,test_step)
         x2 = self._snap_per_core(zdok=zdok,groups=groups)
         sx2 = x2.std(axis=0)
         mx2 = x2.mean(axis=0)/sx2
-        if verbose > 5:
-            print "    ...offset: with {0:+4.1f} mV offset, means are                                      [{1}]".format(
-                test_step,
-                ", ".join(["{0:+7.4f}".format(imx) for imx in mx2])
-            )
+        logger.debug("    ...offset: with {0:+4.1f} mV offset, means are                                      [{1}]".format(
+            test_step,
+            ", ".join(["{0:+7.4f}".format(imx) for imx in mx2])
+        ))
         d_mx = (mx2 - mx1)/test_step
         core_offsets = -mx1/d_mx
         for ic in xrange(1,5):
@@ -576,14 +571,12 @@ class ArtooDaq(object):
         x = self._snap_per_core(zdok=zdok,groups=groups)
         sx = x.std(axis=0)
         mx = x.mean(axis=0)/sx
-        if verbose > 5:
-            print "    ...offset: solution offsets are [{0}] mV, means are [{1}]".format(
-                ", ".join(["{0:+6.2f}".format(ico) for ico in core_offsets]),
-                ", ".join(["{0:+7.4f}".format(imx) for imx in mx])
-            )
+        logger.debug("    ...offset: solution offsets are [{0}] mV, means are [{1}]".format(
+            ", ".join(["{0:+6.2f}".format(ico) for ico in core_offsets]),
+            ", ".join(["{0:+7.4f}".format(imx) for imx in mx])
+        ))
         if any(abs(mx) >= otol):
-            if verbose > 5:
-                print "    ...offset: solution not good enough, iterating (tol={0:4.4f},iter={1:d})".format(otol,oiter)
+            logger.debug("    ...offset: solution not good enough, iterating (tol={0:4.4f},iter={1:d})".format(otol,oiter))
             for ii in xrange(0,oiter):
                 for ic in xrange(1,5):
                     if mx[ic-1] > otol:
@@ -594,24 +587,20 @@ class ArtooDaq(object):
                 x = self._snap_per_core(zdok=zdok,groups=groups)
                 sx = x.std(axis=0)
                 mx = x.mean(axis=0)/sx
-                if verbose > 7:
-                    print "    ...offset: solution offsets are [{0}] mV, means are [{1}]".format(
-                        ", ".join(["{0:+6.2f}".format(ico) for ico in core_offsets]),
-                        ", ".join(["{0:+7.4f}".format(imx) for imx in mx])
-                    )
+                logger.debug("    ...offset: solution offsets are [{0}] mV, means are [{1}]".format(
+                    ", ".join(["{0:+6.2f}".format(ico) for ico in core_offsets]),
+                    ", ".join(["{0:+7.4f}".format(imx) for imx in mx])
+                ))
                 if all(abs(mx) < otol):
-                    if verbose > 5:
-                        print "    ...offset: solution good enough"
+                    logger.debug("    ...offset: solution good enough")
                     break
                 if ii==oiter-1:
-                    if verbose > 5:
-                        print "    ...offset: maximum number of iterations reached, aborting"
+                    logger.warning("    ...offset: maximum number of iterations reached, aborting")
         else:
-            if verbose > 5:
-                print "    ...offset: solution good enough"
+            logger.debug("    ...offset: solution good enough")
         return core_offsets
 
-    def calibrate_adc_gain(self,zdok=0,giter=10,gtol=0.005,verbose=10):
+    def calibrate_adc_gain(self,zdok=0,giter=10,gtol=0.005):
         """
         Attempt to match the core gains within the ADC.
 
@@ -622,18 +611,16 @@ class ArtooDaq(object):
         lim_gain = [-18.0,18.0]
         groups = 8
         test_step = 10*res_gain
-        if verbose > 3:
-            print "  Gain calibration ZDOK{0}:".format(zdok)
+        logger.info("  Gain calibration ZDOK{0}:".format(zdok))
         for ic in xrange(1,5):
             adc5g.set_spi_gain(self.roach2,zdok,ic,0)
         x1 = self._snap_per_core(zdok=zdok,groups=groups)
         sx1 = x1.std(axis=0)
         s0 = sx1[0]
         sx1 = sx1/s0
-        if verbose > 5:
-            print "    ...gain: with zero-offsets, stds are                                    [{0}]".format(
-                ", ".join(["{0:+7.4f}".format(isx) for isx in sx1])
-            )
+        logger.debug("    ...gain: with zero-offsets, stds are                                    [{0}]".format(
+            ", ".join(["{0:+7.4f}".format(isx) for isx in sx1])
+        ))
         # only adjust gains for last three cores, core1 is the reference
         for ic in xrange(2,5):
             adc5g.set_spi_gain(self.roach2,zdok,ic,test_step)
@@ -641,11 +628,10 @@ class ArtooDaq(object):
         sx2 = x2.std(axis=0)
         s0 = sx2[0]
         sx2 = sx2/s0
-        if verbose > 5:
-            print "    ...gain: with {0:+6.2f}% gain, stds are                                    [{1}]".format(
-                test_step,
-                ", ".join(["{0:+7.4f}".format(isx) for isx in sx2])
-            )
+        logger.debug("    ...gain: with {0:+6.2f}% gain, stds are                                    [{1}]".format(
+            test_step,
+            ", ".join(["{0:+7.4f}".format(isx) for isx in sx2])
+        ))
         d_sx = 100*(sx2 - sx1)/test_step
         # give differential for core1 a non-zero value, it won't be used anyway
         d_sx[0] = 1.0
@@ -660,14 +646,12 @@ class ArtooDaq(object):
         sx = x.std(axis=0)
         s0 = sx[0]
         sx = sx/s0
-        if verbose > 5:
-            print "    ...gain: solution gains are [{0}]%, stds are [{1}]".format(
-                ", ".join(["{0:+6.2f}".format(ico) for ico in core_gains]),
-                ", ".join(["{0:+7.4f}".format(isx) for isx in sx])
-            )
+        logger.debug("    ...gain: solution gains are [{0}]%, stds are [{1}]".format(
+            ", ".join(["{0:+6.2f}".format(ico) for ico in core_gains]),
+            ", ".join(["{0:+7.4f}".format(isx) for isx in sx])
+        ))
         if any(abs(1.0-sx) >= gtol):
-            if verbose > 5:
-                print "    ...gain: solution not good enough, iterating (tol={0:4.4f},iter={1:d})".format(gtol,giter)
+            logger.debug("    ...gain: solution not good enough, iterating (tol={0:4.4f},iter={1:d})".format(gtol,giter))
             for ii in xrange(0,giter):
                 for ic in xrange(2,5):
                     if (1.0-sx[ic-1]) > gtol:
@@ -679,24 +663,20 @@ class ArtooDaq(object):
                 sx = x.std(axis=0)
                 s0 = sx[0]
                 sx = sx/s0
-                if verbose > 7:
-                    print "    ...gain: solution gains are [{0}]%, stds are [{1}]".format(
-                            ", ".join(["{0:+6.2f}".format(ico) for ico in core_gains]),
-                            ", ".join(["{0:+7.4f}".format(isx) for isx in sx])
-                    )
+                logger.debug("    ...gain: solution gains are [{0}]%, stds are [{1}]".format(
+                    ", ".join(["{0:+6.2f}".format(ico) for ico in core_gains]),
+                    ", ".join(["{0:+7.4f}".format(isx) for isx in sx])
+                ))
                 if all(abs(1.0-sx) < gtol):
-                    if verbose > 5:
-                        print "    ...gain: solution good enough"
+                    logger.debug("    ...gain: solution good enough")
                     break
                 if ii==giter-1:
-                    if verbose > 5:
-                        print "    ...gain: maximum number of iterations reached, aborting"
+                    logger.warning("    ...gain: maximum number of iterations reached, aborting")
         else:
-            if verbose > 5:
-                print "    ...gain: solution good enough"
+            logger.debug("    ...gain: solution good enough")
         return core_gains
 
-    def calibrate_adc_phase(self,zdok=0,piter=0,ptol=1.0,verbose=10):
+    def calibrate_adc_phase(self,zdok=0,piter=0,ptol=1.0):
         """
         Attempt to match the core phases within the ADC.
         
@@ -705,15 +685,13 @@ class ArtooDaq(object):
         # phase controlled by float varying over [-14,14] ps with 0.11 ps resolution
         res_phase = 0.11
         lim_phase = [-14.0,14.0]
-        if verbose > 3:
-            print "  Phase calibration ZDOK{0}:".format(zdok)
+        logger.info("  Phase calibration ZDOK{0}:".format(zdok))
         core_phases = zeros(4)
         for ic in xrange(1,5):
             core_phases[ic-1] = adc5g.get_spi_phase(self.roach2,zdok,ic)
-        if verbose > 5:
-            print "    ...phase: tuning not implemented yet, phase parameters are [{0}]".format(
-                ", ".join(["{0:+06.2f}".format(icp) for icp in core_phases])
-            )
+        logger.warning("    ...phase: tuning not implemented yet, phase parameters are [{0}]".format(
+            ", ".join(["{0:+06.2f}".format(icp) for icp in core_phases])
+        ))
         return core_phases
                 
     def _snap_per_core(self,zdok=0,groups=1):
@@ -1005,7 +983,7 @@ class ArtooDaq(object):
         if self.FFT_ENGINES.index(tag) > 1:
             raise Warning("FFT engine 'ef' not yet implemented in bitcode")
     
-    def _start(self,boffile='latest-build',do_cal=True,iface="p11p1",verbose=10):
+    def _start(self,boffile='latest-build',do_cal=True,iface="p11p1"):
         """
         Program bitcode on device.
         
@@ -1018,9 +996,7 @@ class ArtooDaq(object):
             If true then do ADC core calibration. Default is True.
         iface : string
             Network interface connected to the data network.
-        verbose : int
-            The higher the more verbose, control the amount of output to
-            the screen. Default is 10 (probably the highest).
+
         Returns
         -------
         """
@@ -1031,16 +1007,13 @@ class ArtooDaq(object):
         # program bitcode
         self.roach2.progdev(boffile)
         self.roach2.wait_connected()
-        if verbose > 1:
-            print "Bitcode '", boffile, "' programmed successfully"
+        logger.info("Bitcode '", boffile, "' programmed successfully")
         
         # display clock speed
-        if verbose > 3:
-            print "Board clock is ", self.roach2.est_brd_clk(), "MHz"
+        logger.debug("Board clock is ", self.roach2.est_brd_clk(), "MHz")
         
         # ADC interface calibration
-        if verbose > 3:
-            print "Performing ADC interface calibration... (only doing ZDOK0)"
+        logger.info("Performing ADC interface calibration... (only doing ZDOK0)")
         adc5g.set_test_mode(self.roach2, 0)
         #~ adc5g.set_test_mode(self.roach2, 1) #<<---- ZDOK1 not yet in bitcode
         adc5g.sync_adc(self.roach2)
@@ -1048,15 +1021,13 @@ class ArtooDaq(object):
         #~ opt1, glitches1 = adc5g.calibrate_mmcm_phase(self.roach2, 1, ['zdok_1_snap_data',]) #<<---- ZDOK1 not yet in bitcode
         adc5g.unset_test_mode(self.roach2, 0)
         #~ adc5g.unset_test_mode(self.roach2, 1) #<<---- ZDOK1 not yet in bitcode
-        if verbose > 3:
-            print "...ADC interface calibration done."
-        if verbose > 5:
-            print "if0: opt0 = ",opt0, ", glitches0 = \n", array(glitches0)
-            #~ print "if1: ",opt0, glitches0  #<<---- ZDOK1 not yet in bitcode
+        logger.info("...ADC interface calibration done.")
+        logger.debug("if0: opt0 = ",opt0, ", glitches0 = \n", array(glitches0))
+        #~ logger.debug("if0: opt0 = ",opt0, ", glitches0 = \n", array(glitches0)) #<<---- ZDOK1 not yet in bitcode
     
         # ADC core calibration
         if do_cal:
-            self.calibrate_adc_ogp(zdok=0,verbose=verbose)
+            self.calibrate_adc_ogp(zdok=0)
         
         # build channel-list
         ch_list = ['a','b','c','d','e','f']
@@ -1067,8 +1038,7 @@ class ArtooDaq(object):
                 self._implemented_digital_channels.append(ch)
             except RuntimeError:
                 pass
-        if verbose > 3:
-            print "Valid channels in this build: {0}".format(self.implemented_digital_channels)
+        logger.info("Valid channels in this build: {0}".format(self.implemented_digital_channels))
 
         # hold master reset signal and arm the manual sync
         self.roach2.write_int('master_ctrl',0x00000001 | 0x00000002)
@@ -1119,10 +1089,8 @@ class ArtooDaq(object):
 #        master_ctrl = master_ctrl & 0xFFFFFFFC
 #        self.roach2.write_int('master_ctrl',master_ctrl)
         # on the 
-        if verbose > 1:
-            print "Configuration done, system should be running"
-        #~ if verbose > 3:
-            #~ print "Hard-reset for buffer overflow error"
+        logger.info("Configuration done, system should be running")
+        #~ logger.debug("Hard-reset for buffer overflow error")
         #~ master_ctrl = self.roach2.write_int('master_ctrl',0x00000001)
         #~ self.roach2.write_int('tengbe_a_ctrl',0x80000000)
         #~ sleep(1)
