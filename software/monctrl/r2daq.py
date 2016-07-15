@@ -1340,10 +1340,10 @@ class ArtooDaq(object):
         # program bitcode
         self.roach2.progdev(boffile)
         self.roach2.wait_connected()
-        logger.info("Bitcode '", boffile, "' programmed successfully")
+        logger.info("Bitcode '{0}' programmed successfully".format(boffile))
         
         # display clock speed
-        logger.debug("Board clock is ", self.roach2.est_brd_clk(), "MHz")
+        logger.debug("Board clock is {0} MHz".format(self.roach2.est_brd_clk()))
         
         # ADC interface calibration
         if do_adcif_cal:
@@ -1356,7 +1356,7 @@ class ArtooDaq(object):
             adc5g.unset_test_mode(self.roach2, 0)
             #~ adc5g.unset_test_mode(self.roach2, 1) #<<---- ZDOK1 not yet in bitcode
             logger.info("...ADC interface calibration done.")
-            logger.debug("if0: opt0 = ",opt0, ", glitches0 = \n", array(glitches0))
+            logger.debug("if0: opt0 = {0}\nglitches0 = {1}\n".format(opt0,array(glitches0)))
             #~ logger.debug("if0: opt0 = ",opt0, ", glitches0 = \n", array(glitches0)) #<<---- ZDOK1 not yet in bitcode
         
         # ADC core calibration
