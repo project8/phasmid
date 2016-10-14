@@ -423,6 +423,7 @@ class ArtooDaq(object):
                 do_adcif_cal=do_adcif_cal
             )
         # initialize some data structures
+        self._populate_digital_channels()
         self._ddc_1st = dict()
         for did in self.DIGITAL_CHANNELS:
             self._ddc_1st[did] = None
@@ -1177,6 +1178,29 @@ class ArtooDaq(object):
         B = B/128.0
         return B
     
+    def _populate_digital_channels(self):
+        """
+        Add digital channels available in running bitcode.
+        """
+        # build channel-list
+        ch_list = ['a','b','c','d','e','f']
+        self._implemented_digital_channels = []
+        for ch in ch_list:
+            try:
+                self.roach2.read_int("tengbe_{0}_ctrl".format(ch))
+                self._implemented_digital_channels.append(ch)
+                # for each channel, deactivate the network interface
+                #~ self._tengbe_reset_hi(tag=ch)
+                ### -------
+                ### This portion to be removed after bitcode changes to
+                ### enable arbitrary changes to network interfaces
+                if ch in self._tmp_iface_dict.keys():
+                    self._config_channel_net(**self._tmp_iface_dict[ch])
+                ### -------
+            except RuntimeError:
+                pass
+        logger.info("Valid channels in this build: {0}".format(self.implemented_digital_channels))
+    
     def _check_valid_digital_channel(self,tag):
         """
         Check if digital channel tag is valid.
@@ -1370,24 +1394,6 @@ class ArtooDaq(object):
         #~ self.roach2.write_int('master_ctrl',0x00000001 | 0x00000002)
         #~ master_ctrl = self.roach2.read_int('master_ctrl')
         
-        # build channel-list
-        ch_list = ['a','b','c','d','e','f']
-        self._implemented_digital_channels = []
-        for ch in ch_list:
-            try:
-                self.roach2.read_int("tengbe_{0}_ctrl".format(ch))
-                self._implemented_digital_channels.append(ch)
-                # for each channel, deactivate the network interface
-                #~ self._tengbe_reset_hi(tag=ch)
-                ### -------
-                ### This portion to be removed after bitcode changes to
-                ### enable arbitrary changes to network interfaces
-                if ch in self._tmp_iface_dict.keys():
-                    self._config_channel_net(**self._tmp_iface_dict[ch])
-                ### -------
-            except RuntimeError:
-                pass
-        logger.info("Valid channels in this build: {0}".format(self.implemented_digital_channels))
         
         self._load_time()
         
