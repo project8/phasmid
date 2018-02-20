@@ -53,7 +53,9 @@ Project~8 Phase~II on the ROACH2 platform.
 	\hline
 	{\bf Version} & {\bf Date} & {\bf Authors} & {\bf Summary of changes}\\
 	\hline
-	1.00 & \today & AY & Initial version\\
+	1.00 & June 30, 2016 & AY & Initial version\\
+	\hline
+	1.01 & February 20, 2018 & AY & Correct clock signal power\\
 	\hline
 \end{tabularx}
 
@@ -288,7 +290,7 @@ necessary analog signals and to cable up the data network. The exact
 configuration depends on the gateware version, however in general the 
 following applies.
 \begin{enumerate}
-	\item Supply a -6~dBm 1600~MHz tone to the SMA port labelled 
+	\item Supply a +3~dBm 1600~MHz tone to the SMA port labelled
 	\ilcode{clk} .
 	\item Provide the analog signal(s) to be digitized to the SMA port(s) 
 	labelled \ilcode{if0} and/or \ilcode{if1} .
